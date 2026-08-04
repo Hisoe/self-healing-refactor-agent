@@ -13,10 +13,10 @@ from src.agent.schemas import AgentState
 def test_unit_generator_node(mock_get_llm, sample_agent_state: AgentState):
     """Unit test targeting generate_tests_node directly using a mocked ChatModel."""
     mock_llm = MagicMock()
-    mock_llm.invoke.return_value.content = (
-        '{"test_code": "from solution import add\\n\\ndef test_add():\\n    assert add(1, 2) == 3",'
-        ' "test_descriptions": ["Validates addition"]}'
-    )
+    mock_llm.invoke.return_value.content = """{
+        "test_code": "from solution import add\\n\\ndef test_add():\\n    assert add(1, 2) == 3",
+        "test_descriptions": ["Validates addition"]
+    }"""
     mock_get_llm.return_value = mock_llm
 
     from src.agent.nodes import generate_tests_node
@@ -30,16 +30,21 @@ def test_unit_generator_node(mock_get_llm, sample_agent_state: AgentState):
 def test_self_healing_graph_execution(mock_get_llm):
     """End-to-end integration test for the compiled StateGraph with mocked LLM outputs."""
     mock_llm = MagicMock()
-    # Return structured JSON for refactoring and test generation
+
+    refactor_response = """{
+        "refactored_code": "def process_user_data(data: list) -> list:\\n    return [x['name'].upper() for x in data if x.get('active')]",
+        "explanation": "Modernized implementation with list comprehension.",
+        "imports_used": []
+    }"""
+
+    test_gen_response = """{
+        "test_code": "from solution import process_user_data\\n\\ndef test_process():\\n    assert process_user_data([{'name': 'alice', 'active': True}]) == ['ALICE']",
+        "test_descriptions": ["Validates active user filtering."]
+    }"""
+
     mock_llm.invoke.side_effect = [
-        # 1st call: refactor_node
-        MagicMock(
-            content='{"refactored_code": "def process_user_data(data: list) -> list:\\n    return [x[\'name\'].upper() for x in data if x.get(\'active\')]", "explanation": "Modernized", "imports_used": []}'
-        ),
-        # 2nd call: generate_tests_node
-        MagicMock(
-            content='{"test_code": "from solution import process_user_data\\n\\ndef test_process():\\n    assert process_user_data([{\\'name\\': \\'alice\\', \\'active\\': True}]) == [\\'ALICE\\']", "test_descriptions": ["Test active user"]}'
-        ),
+        MagicMock(content=refactor_response),
+        MagicMock(content=test_gen_response),
     ]
     mock_get_llm.return_value = mock_llm
 
