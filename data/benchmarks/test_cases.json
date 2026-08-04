@@ -1,0 +1,27 @@
+[
+    {
+        "id": "bench_01_dictionary_filtering",
+        "name": "Untyped Dictionary Filtering",
+        "legacy_code": "def process_user_data(data):\n    res = []\n    for x in data:\n        if x['active'] == True:\n            res.append(x['name'].upper())\n    return res\n"
+    },
+    {
+        "id": "bench_02_fibonacci_recursion",
+        "name": "Inefficient Recursive Fibonacci",
+        "legacy_code": "def fib(n):\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    return fib(n-1) + fib(n-2)\n"
+    },
+    {
+        "id": "bench_03_string_aggregation",
+        "name": "Inefficient String Concatenation in Loop",
+        "legacy_code": "def aggregate_logs(logs):\n    out = ''\n    for log in logs:\n        if 'ERROR' in log:\n            out += log.strip() + '\\n'\n    return out\n"
+    },
+    {
+        "id": "bench_04_mutable_default_args",
+        "name": "Mutable Default Parameter Bug",
+        "legacy_code": "def append_to_list(element, target_list=[]):\n    target_list.append(element)\n    return target_list\n"
+    },
+    {
+        "id": "bench_05_unhandled_dict_get",
+        "name": "Unsafe Key Access with Missing Fallbacks",
+        "legacy_code": "def get_user_email(user_profile):\n    return user_profile['contact']['email'].lower()\n"
+    }
+]

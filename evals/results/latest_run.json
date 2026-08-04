@@ -1,0 +1,54 @@
+{
+  "total_benchmarks": 5,
+  "pass_at_1": 60.0,
+  "pass_at_n": 100.0,
+  "avg_iterations": 1.4,
+  "total_duration_seconds": 98.69,
+  "results": [
+    {
+      "benchmark_id": "bench_01_dictionary_filtering",
+      "benchmark_name": "Untyped Dictionary Filtering",
+      "passed": true,
+      "iterations_used": 2,
+      "duration_seconds": 63.26,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_02_fibonacci_recursion",
+      "benchmark_name": "Inefficient Recursive Fibonacci",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 7.97,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_03_string_aggregation",
+      "benchmark_name": "Inefficient String Concatenation in Loop",
+      "passed": true,
+      "iterations_used": 2,
+      "duration_seconds": 14.46,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_04_mutable_default_args",
+      "benchmark_name": "Mutable Default Parameter Bug",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 6.28,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_05_unhandled_dict_get",
+      "benchmark_name": "Unsafe Key Access with Missing Fallbacks",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 6.72,
+      "status": "PASSED",
+      "error_message": null
+    }
+  ]
+}
