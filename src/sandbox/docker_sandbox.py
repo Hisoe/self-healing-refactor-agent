@@ -24,7 +24,7 @@ class DockerSandboxEngine(AbstractSandbox):
         self.timeout_seconds = timeout_seconds
         self.client = docker.from_env()
 
-def run_tests(self, refactored_code: str, test_code: str) -> ExecutionResult:
+def run_tests(self, refactored_code: str, test_code: str, timeout: int = 30) -> ExecutionResult:
         """
         Mounts solution and test code into an ephemeral directory and executes pytest
         with hardened timeout and container lifecycle management.
