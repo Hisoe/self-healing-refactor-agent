@@ -5,10 +5,10 @@ Executes untrusted LLM-generated code and test suites inside an ephemeral
 Docker container with resource constraints, zero network access, and safe log extraction.
 """
 
-from src.sandbox.base import AbstractSandbox
 import os
 import tempfile
 import docker
+from src.sandbox.base import AbstractSandbox
 from src.agent.schemas import ExecutionResult
 
 
@@ -24,11 +24,15 @@ class DockerSandboxEngine(AbstractSandbox):
         self.timeout_seconds = timeout_seconds
         self.client = docker.from_env()
 
-def run_tests(self, refactored_code: str, test_code: str, timeout: int = 30) -> ExecutionResult:
+    def run_tests(
+        self, refactored_code: str, test_code: str, timeout: int = 30
+    ) -> ExecutionResult:
         """
-        Mounts solution and test code into an ephemeral directory and executes pytest
-        with hardened timeout and container lifecycle management.
+        Mounts solution and test code into an ephemeral directory and executes pytest.
+        Fulfills AbstractSandbox.run_tests interface contract explicitly.
         """
+        effective_timeout = timeout or self.timeout_seconds
+
         with tempfile.TemporaryDirectory() as host_temp_dir:
             solution_path = os.path.join(host_temp_dir, "solution.py")
             test_path = os.path.join(host_temp_dir, "test_solution.py")
@@ -52,8 +56,7 @@ def run_tests(self, refactored_code: str, test_code: str, timeout: int = 30) -> 
                     detach=True,
                 )
 
-                # Wait for execution completion or timeout
-                result = container.wait(timeout=self.timeout_seconds)
+                result = container.wait(timeout=effective_timeout)
                 exit_code = result.get("StatusCode", -1)
 
                 logs_bytes = container.logs(stdout=True, stderr=True)
@@ -69,16 +72,10 @@ def run_tests(self, refactored_code: str, test_code: str, timeout: int = 30) -> 
                 )
 
             except Exception as e:
-                # Explicitly stop container on timeout or execution error
-                if container:
-                    try:
-                        container.stop(timeout=1)
-                    except Exception:
-                        pass
-
                 logs_str = ""
                 if container:
                     try:
+                        container.stop(timeout=1)
                         logs_bytes = container.logs(stdout=True, stderr=True)
                         logs_str = logs_bytes.decode("utf-8", errors="replace")
                     except Exception:
@@ -86,7 +83,7 @@ def run_tests(self, refactored_code: str, test_code: str, timeout: int = 30) -> 
 
                 error_msg = logs_str or str(e)
                 return ExecutionResult(
-                    passed=passed if 'passed' in locals() else False,
+                    passed=False,
                     exit_code=-1,
                     stdout="",
                     stderr=error_msg,
