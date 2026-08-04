@@ -42,10 +42,14 @@ def test_self_healing_graph_execution(mock_get_llm):
         "test_descriptions": ["Validates active user filtering."]
     }"""
 
-    mock_llm.invoke.side_effect = [
-        MagicMock(content=refactor_response),
-        MagicMock(content=test_gen_response),
-    ]
+    # Dynamic mock function that returns appropriate payload based on prompt content
+    def mock_invoke(prompt):
+        prompt_str = str(prompt)
+        if "Quality Engineering" in prompt_str or "pytest" in prompt_str:
+            return MagicMock(content=test_gen_response)
+        return MagicMock(content=refactor_response)
+
+    mock_llm.invoke.side_effect = mock_invoke
     mock_get_llm.return_value = mock_llm
 
     app = build_graph()
