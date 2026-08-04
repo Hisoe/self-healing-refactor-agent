@@ -13,8 +13,8 @@ from src.agent.schemas import AgentState
 def test_unit_generator_node(mock_get_llm, sample_agent_state: AgentState):
     """Unit test targeting generate_tests_node directly using a mocked ChatModel."""
     mock_llm = MagicMock()
-    mock_llm.invoke.return_value.content = """{
-        "test_code": "from solution import add\\n\\ndef test_add():\\n    assert add(1, 2) == 3",
+    mock_llm.invoke.return_value.content = r"""{
+        "test_code": "from solution import add\n\ndef test_add():\n    assert add(1, 2) == 3",
         "test_descriptions": ["Validates addition"]
     }"""
     mock_get_llm.return_value = mock_llm
@@ -31,14 +31,14 @@ def test_self_healing_graph_execution(mock_get_llm):
     """End-to-end integration test for the compiled StateGraph with mocked LLM outputs."""
     mock_llm = MagicMock()
 
-    refactor_response = """{
-        "refactored_code": "def process_user_data(data: list) -> list:\\n    return [x['name'].upper() for x in data if x.get('active')]",
+    refactor_response = r"""{
+        "refactored_code": "def process_user_data(data: list) -> list:\n    return [x['name'].upper() for x in data if x.get('active')]",
         "explanation": "Modernized implementation with list comprehension.",
         "imports_used": []
     }"""
 
-    test_gen_response = """{
-        "test_code": "from solution import process_user_data\\n\\ndef test_process():\\n    assert process_user_data([{'name': 'alice', 'active': True}]) == ['ALICE']",
+    test_gen_response = r"""{
+        "test_code": "from solution import process_user_data\n\ndef test_process():\n    assert process_user_data([{'name': 'alice', 'active': True}]) == ['ALICE']",
         "test_descriptions": ["Validates active user filtering."]
     }"""
 
