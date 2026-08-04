@@ -5,14 +5,15 @@ Executes untrusted LLM-generated code and test suites inside an ephemeral
 Docker container with resource constraints, zero network access, and safe log extraction.
 """
 
+from src.sandbox.base import AbstractSandbox
 import os
 import tempfile
 import docker
 from src.agent.schemas import ExecutionResult
 
 
-class DockerSandboxEngine:
-    """Safely runs pytest execution in an isolated Docker container."""
+class DockerSandboxEngine(AbstractSandbox):
+    """Concrete Docker SDK sandbox implementation with cgroup resource limits and isolation."""
 
     def __init__(
         self,

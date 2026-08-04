@@ -1,16 +1,16 @@
 {
-  "total_benchmarks": 5,
-  "pass_at_1": 60.0,
+  "total_benchmarks": 15,
+  "pass_at_1": 93.33,
   "pass_at_n": 100.0,
-  "avg_iterations": 1.4,
-  "total_duration_seconds": 98.69,
+  "avg_iterations": 1.07,
+  "total_duration_seconds": 144.01,
   "results": [
     {
       "benchmark_id": "bench_01_dictionary_filtering",
       "benchmark_name": "Untyped Dictionary Filtering",
       "passed": true,
-      "iterations_used": 2,
-      "duration_seconds": 63.26,
+      "iterations_used": 1,
+      "duration_seconds": 47.32,
       "status": "PASSED",
       "error_message": null
     },
@@ -19,7 +19,7 @@
       "benchmark_name": "Inefficient Recursive Fibonacci",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 7.97,
+      "duration_seconds": 9.31,
       "status": "PASSED",
       "error_message": null
     },
@@ -28,7 +28,7 @@
       "benchmark_name": "Inefficient String Concatenation in Loop",
       "passed": true,
       "iterations_used": 2,
-      "duration_seconds": 14.46,
+      "duration_seconds": 12.87,
       "status": "PASSED",
       "error_message": null
     },
@@ -37,7 +37,7 @@
       "benchmark_name": "Mutable Default Parameter Bug",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 6.28,
+      "duration_seconds": 6.72,
       "status": "PASSED",
       "error_message": null
     },
@@ -46,7 +46,97 @@
       "benchmark_name": "Unsafe Key Access with Missing Fallbacks",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 6.72,
+      "duration_seconds": 6.71,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_06_unclosed_file_handle",
+      "benchmark_name": "Unclosed File IO Handle",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 6.14,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_07_manual_sum_loop",
+      "benchmark_name": "Imperative Accumulation Loop",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 5.15,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_08_duplicate_dict_keys",
+      "benchmark_name": "Redundant Dict Transformation",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 6.35,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_09_manual_type_casting",
+      "benchmark_name": "Unsafe String to Int Conversion",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 6.92,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_10_imperative_filtering",
+      "benchmark_name": "Manual Deduplication and Filter",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 7.14,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_11_deprecated_has_key",
+      "benchmark_name": "Legacy Dictionary Key Verification",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 5.79,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_12_nested_indexing",
+      "benchmark_name": "Unsafe Deep Nested Indexing",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 6.32,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_13_global_state_mutation",
+      "benchmark_name": "Global Counter Side Effect Pattern",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 5.36,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_14_raw_exception_swallowing",
+      "benchmark_name": "Bare Exception Catching",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 6.65,
+      "status": "PASSED",
+      "error_message": null
+    },
+    {
+      "benchmark_id": "bench_15_legacy_formatting",
+      "benchmark_name": "Legacy Percent Formatting String Construction",
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 5.23,
       "status": "PASSED",
       "error_message": null
     }

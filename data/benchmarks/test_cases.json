@@ -23,5 +23,55 @@
         "id": "bench_05_unhandled_dict_get",
         "name": "Unsafe Key Access with Missing Fallbacks",
         "legacy_code": "def get_user_email(user_profile):\n    return user_profile['contact']['email'].lower()\n"
+    },
+    {
+        "id": "bench_06_unclosed_file_handle",
+        "name": "Unclosed File IO Handle",
+        "legacy_code": "def read_first_line(filepath):\n    f = open(filepath, 'r')\n    data = f.readline()\n    return data.strip()\n"
+    },
+    {
+        "id": "bench_07_manual_sum_loop",
+        "name": "Imperative Accumulation Loop",
+        "legacy_code": "def total_price(cart):\n    total = 0\n    for item in cart:\n        total = total + item['price'] * item['qty']\n    return total\n"
+    },
+    {
+        "id": "bench_08_duplicate_dict_keys",
+        "name": "Redundant Dict Transformation",
+        "legacy_code": "def group_by_id(records):\n    res = {}\n    for r in records:\n        k = r['id']\n        if k not in res:\n            res[k] = []\n        res[k].append(r['value'])\n    return res\n"
+    },
+    {
+        "id": "bench_09_manual_type_casting",
+        "name": "Unsafe String to Int Conversion",
+        "legacy_code": "def parse_ages(age_strings):\n    ages = []\n    for s in age_strings:\n        ages.append(int(s))\n    return ages\n"
+    },
+    {
+        "id": "bench_10_imperative_filtering",
+        "name": "Manual Deduplication and Filter",
+        "legacy_code": "def get_unique_evens(numbers):\n    seen = []\n    for n in numbers:\n        if n % 2 == 0:\n            if n not in seen:\n                seen.append(n)\n    return seen\n"
+    },
+    {
+        "id": "bench_11_deprecated_has_key",
+        "name": "Legacy Dictionary Key Verification",
+        "legacy_code": "def check_access(user, permission):\n    if 'permissions' in user:\n        return permission in user['permissions']\n    return False\n"
+    },
+    {
+        "id": "bench_12_nested_indexing",
+        "name": "Unsafe Deep Nested Indexing",
+        "legacy_code": "def extract_zip(payload):\n    return payload['data']['address']['zipcode']\n"
+    },
+    {
+        "id": "bench_13_global_state_mutation",
+        "name": "Global Counter Side Effect Pattern",
+        "legacy_code": "counter = 0\ndef increment_and_get():\n    global counter\n    counter += 1\n    return counter\n"
+    },
+    {
+        "id": "bench_14_raw_exception_swallowing",
+        "name": "Bare Exception Catching",
+        "legacy_code": "def safe_division(a, b):\n    try:\n        return a / b\n    except:\n        return None\n"
+    },
+    {
+        "id": "bench_15_legacy_formatting",
+        "name": "Legacy Percent Formatting String Construction",
+        "legacy_code": "def format_user_msg(name, score):\n    return 'User %s scored %d points' % (name, score)\n"
     }
 ]
