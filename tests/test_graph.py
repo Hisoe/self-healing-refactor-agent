@@ -1,57 +1,25 @@
 """
 tests/test_graph.py
 -------------------
-Unit tests for LangGraph state graph nodes and workflow execution using mocked LLM engines.
+Integration test suite running live LLM executions through compiled LangGraph state graph.
 """
 
-from unittest.mock import MagicMock, patch
 from src.agent.graph import build_graph
+from src.agent.nodes import generate_tests_node
 from src.agent.schemas import AgentState
 
 
-@patch("src.agent.nodes.get_llm_engine")
-def test_unit_generator_node(mock_get_llm, sample_agent_state: AgentState):
-    """Unit test targeting generate_tests_node directly using a mocked ChatModel."""
-    mock_llm = MagicMock()
-    mock_llm.invoke.return_value.content = r"""{
-        "test_code": "from solution import add\n\ndef test_add():\n    assert add(1, 2) == 3",
-        "test_descriptions": ["Validates addition"]
-    }"""
-    mock_get_llm.return_value = mock_llm
-
-    from src.agent.nodes import generate_tests_node
-
+def test_unit_generator_node(sample_agent_state: AgentState):
+    """Integration test targeting generate_tests_node directly using a live LLM execution."""
     result = generate_tests_node(sample_agent_state)
+
     assert result["status"] == "TESTS_GENERATED"
-    assert "test_code" in result
+    assert result["test_code"] is not None
+    assert "def test_" in result["test_code"]
 
 
-@patch("src.agent.nodes.get_llm_engine")
-def test_self_healing_graph_execution(mock_get_llm):
-    """End-to-end integration test for the compiled StateGraph with mocked LLM outputs."""
-    mock_llm = MagicMock()
-
-    refactor_response = r"""{
-        "refactored_code": "def process_user_data(data: list) -> list:\n    return [x['name'].upper() for x in data if x.get('active')]",
-        "explanation": "Modernized implementation with list comprehension.",
-        "imports_used": []
-    }"""
-
-    test_gen_response = r"""{
-        "test_code": "from solution import process_user_data\n\ndef test_process():\n    assert process_user_data([{'name': 'alice', 'active': True}]) == ['ALICE']",
-        "test_descriptions": ["Validates active user filtering."]
-    }"""
-
-    # Dynamic mock function that returns appropriate payload based on prompt content
-    def mock_invoke(prompt):
-        prompt_str = str(prompt)
-        if "Quality Engineering" in prompt_str or "pytest" in prompt_str:
-            return MagicMock(content=test_gen_response)
-        return MagicMock(content=refactor_response)
-
-    mock_llm.invoke.side_effect = mock_invoke
-    mock_get_llm.return_value = mock_llm
-
+def test_self_healing_graph_execution():
+    """End-to-end integration test executing compiled StateGraph against a live LLM."""
     app = build_graph()
 
     buggy_code = """
@@ -76,4 +44,9 @@ def process_user_data(data):
     }
 
     final_state = app.invoke(initial_state)
+
+    # Asserts complete end-to-end pipeline execution succeeded
     assert final_state["status"] == "PASSED"
+    assert final_state["refactored_code"] is not None
+    assert final_state["test_code"] is not None
+    assert final_state["execution_result"].passed is True

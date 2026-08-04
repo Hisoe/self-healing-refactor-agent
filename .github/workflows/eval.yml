@@ -33,19 +33,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run Pytest Integration Suite
+      - name: Run Pytest Integration Suite (Live 8B Model - High Quota)
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           LLM_PROVIDER: groq
-          GROQ_MODEL: llama-3.3-70b-versatile
+          GROQ_MODEL: llama-3.1-8b-instant
         run: |
           python -m pytest tests/ -v -s
 
-      - name: Execute Automated Evaluation Benchmark Harness
+      - name: Execute Automated Evaluation Benchmark Harness (Live Model)
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           LLM_PROVIDER: groq
-          GROQ_MODEL: llama-3.3-70b-versatile
+          GROQ_MODEL: llama-3.1-8b-instant
         run: |
           python -m evals.eval_runner
 
