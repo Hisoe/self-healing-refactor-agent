@@ -4,7 +4,7 @@
 [![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-orange.svg)](https://github.com/langchain-ai/langgraph)
 [![Docker Sandbox](https://img.shields.io/badge/Security-Docker_Sandbox-blue.svg)](https://www.docker.com/)
 [![Evals Pass@N](https://img.shields.io/badge/Pass%40N-100%25-brightgreen.svg)](#-benchmark--evaluation-metrics)
-![CI Pipeline](https://github.com/your-username/your-repo-name/actions/workflows/evals.yml/badge.svg)
+[![CI Pipeline](https://github.com/your-username/your-repo-name/actions/workflows/evals.yml/badge.svg)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 
