@@ -15,7 +15,8 @@ dependencies = [
     "pydantic>=2.7.0",
     "docker>=7.0.0",
     "python-dotenv>=1.0.0",
-    "rich>=13.0.0"
+    "rich>=13.0.0",
+    "json-repair>=0.28.0"
 ]
 
 [project.optional-dependencies]
@@ -27,5 +28,15 @@ dev = [
     "build>=1.0.0"
 ]
 
+[project.scripts]
+refactor-agent = "src.cli:run_cli"
+
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+norecursedirs = ["src", ".venv", "build", "dist"]
+asyncio_mode = "strict"

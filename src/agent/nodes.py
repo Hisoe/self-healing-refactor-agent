@@ -1,0 +1,240 @@
+"""
+src/agent/nodes.py
+------------------
+Contains atomic LangGraph node functions and routing logic for the
+self-healing code refactoring workflow with robust, multi-layer JSON parsing.
+"""
+
+import logging
+import re
+import json
+from typing import Dict, Any, Literal
+from json_repair import repair_json
+
+from langchain_core.prompts import ChatPromptTemplate
+from src.agent.factory import get_llm_engine
+from src.agent.schemas import AgentState, RefactoredCodeOutput, PytestSuiteOutput
+from src.sandbox.docker_sandbox import DockerSandboxEngine
+
+logger = logging.getLogger(__name__)
+
+# Shared engine instance to avoid redundant socket handshakes per loop pass
+_SANDBOX_ENGINE = DockerSandboxEngine()
+
+
+def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
+    """
+    Production-grade parser with multi-tier fallback for raw code outputs,
+    markdown wrapping, and JSON repair.
+    """
+    text = raw_text.strip()
+
+    # 1. Strip markdown fences if present
+    if "```" in text:
+        text = re.sub(r"^```(?:json|python)?\s*", "", text, flags=re.MULTILINE)
+        text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
+
+    # 2. Extract JSON object boundaries if the LLM output extra prose
+    start_idx = text.find("{")
+    end_idx = text.rfind("}")
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        json_candidate = text[start_idx : end_idx + 1]
+    else:
+        json_candidate = text
+
+    # 3. Attempt JSON Repair
+    try:
+        repaired_obj = repair_json(json_candidate, return_objects=True)
+        
+        if isinstance(repaired_obj, dict):
+            return schema_cls(**repaired_obj)
+        
+        if isinstance(repaired_obj, list) and len(repaired_obj) > 0:
+            for item in repaired_obj:
+                if isinstance(item, dict) and ("refactored_code" in item or "test_code" in item):
+                    return schema_cls(**item)
+    except Exception as e:
+        logger.warning(f"JSON repair failed: {e}. Attempting fallback parser.")
+
+    # 4. Fallback for test_generator_node: If model returned raw python test code instead of JSON
+    if schema_cls == PytestSuiteOutput:
+        logger.warning("LLM emitted raw Python test code instead of JSON. Wrapping manually.")
+        return PytestSuiteOutput(
+            test_code=text,
+            test_descriptions=["Extracted from raw model code output."]
+        )
+
+    # 5. Fallback for refactor_node: If model returned raw refactored python code
+    if schema_cls == RefactoredCodeOutput:
+        logger.warning("LLM emitted raw Python code instead of JSON. Wrapping manually.")
+        return RefactoredCodeOutput(
+            refactored_code=text,
+            explanation="Extracted from raw model code output.",
+            imports_used=[]
+        )
+
+    raise ValueError(f"Could not parse valid schema from LLM response: {raw_text[:200]}...")
+
+
+def _truncate_stack_trace(trace: str, max_lines: int = 40) -> str:
+    """Truncates massive stack traces to prevent context window inflation."""
+    lines = trace.splitlines()
+    if len(lines) <= max_lines:
+        return trace
+    return "\n".join(lines[-max_lines:])
+
+
+def refactor_node(state: AgentState) -> Dict[str, Any]:
+    """
+    Refactors original code into typed, modern Python 3.10+.
+    Injects previous sandbox execution errors and failing refactored code if retrying.
+    """
+    llm = get_llm_engine()
+
+    failure_context = ""
+    code_to_refactor = state.get("refactored_code") or state["original_code"]
+
+    if state.get("failure_history"):
+        latest_error = _truncate_stack_trace(state["failure_history"][-1])
+        failure_context = (
+            f"\n\n### CRITICAL: PREVIOUS ATTEMPT FAILED IN SANDBOX EXECUTION ###\n"
+            f"Your previous solution failed unit tests with this output:\n"
+            f"```text\n{latest_error}\n```\n"
+            f"Examine the failure trace and update the implementation to satisfy the test assertions.\n"
+        )
+
+    system_prompt = (
+        "You are an expert Principal Python Engineer specializing in code refactoring, "
+        "performance optimization, type hinting, and PEP-8 compliance.\n"
+        "Your goal is to refactor the user's code to modern, robust Python 3.10+ standards.\n\n"
+        "STRICT OUTPUT FORMAT RULES:\n"
+        "1. Output ONLY a valid JSON object matching the required schema.\n"
+        "2. Do NOT wrap output in markdown python code fences (```python).\n"
+        "Schema:\n"
+        "{{\n"
+        '  "refactored_code": "def example():\\n    pass",\n'
+        '  "explanation": "Summary of changes.",\n'
+        '  "imports_used": []\n'
+        "}}\n"
+        "{failure_context}"
+    )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "Refactor or fix the following Python code:\n\n```python\n{code_to_refactor}\n```")
+    ])
+
+    formatted_prompt = prompt.format_messages(
+        code_to_refactor=code_to_refactor,
+        failure_context=failure_context
+    )
+
+    response = llm.invoke(formatted_prompt)
+    result: RefactoredCodeOutput = _safe_parse_model(response.content, RefactoredCodeOutput)
+
+    return {
+        "refactored_code": result.refactored_code,
+        "refactor_explanation": result.explanation,
+        "status": "REFACTORED"
+    }
+
+
+def generate_tests_node(state: AgentState) -> Dict[str, Any]:
+    """
+    Generates unit tests targeting the refactored solution.
+    Strictly enforces boolean literals and explicit imports.
+    """
+    llm = get_llm_engine()
+
+    failure_context = ""
+    if state.get("failure_history"):
+        latest_error = _truncate_stack_trace(state["failure_history"][-1])
+        failure_context = (
+            f"\n\n### CRITICAL: PREVIOUS TEST EXECUTION FAILED ###\n"
+            f"The previous test run failed with this output:\n"
+            f"```text\n{latest_error}\n```\n"
+            f"Fix any failing test assertions. Ensure dictionary boolean flags use real Python booleans (True/False) rather than string representations ('True'/'False').\n"
+        )
+
+    system_prompt = (
+        "You are a Quality Engineering Specialist. Write a concise, self-contained "
+        "pytest test suite that tests the refactored Python code.\n\n"
+        "CRITICAL IMPORT RULES:\n"
+        "1. The code being tested is placed in a module named 'solution'.\n"
+        "2. ALWAYS import functions directly using: `from solution import <function_name>`.\n\n"
+        "TESTING RULES:\n"
+        "1. Focus on standard valid inputs, empty lists, and realistic dictionary inputs.\n"
+        "2. For boolean status fields (e.g. 'active'), ALWAYS use standard Python boolean literals (`True` or `False`), NOT string representations like `'True'` or `'False'`.\n\n"
+        "STRICT OUTPUT FORMAT RULES:\n"
+        "1. Output ONLY a valid JSON object matching the required schema.\n"
+        "2. Do NOT use Python triple-quotes inside string fields.\n"
+        "Schema:\n"
+        "{{\n"
+        '  "test_code": "from solution import example_func\\n\\ndef test_example():\\n    assert True",\n'
+        '  "test_descriptions": ["Validates example function."]\n'
+        "}}\n"
+        "{failure_context}"
+    )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "Write pytest unit tests for this solution:\n\n```python\n{refactored_code}\n```")
+    ])
+
+    formatted_prompt = prompt.format_messages(
+        refactored_code=state["refactored_code"],
+        failure_context=failure_context
+    )
+
+    response = llm.invoke(formatted_prompt)
+    result: PytestSuiteOutput = _safe_parse_model(response.content, PytestSuiteOutput)
+
+    return {
+        "test_code": result.test_code,
+        "status": "TESTS_GENERATED"
+    }
+
+
+def run_tests_node(state: AgentState) -> Dict[str, Any]:
+    """
+    Executes the refactored code and test suite in the isolated Docker sandbox.
+    """
+    exec_result = _SANDBOX_ENGINE.run_tests(
+        refactored_code=state["refactored_code"],
+        test_code=state["test_code"]
+    )
+
+    new_iteration = state["iteration_count"] + 1
+
+    updates: Dict[str, Any] = {
+        "execution_result": exec_result,
+        "iteration_count": new_iteration,
+        "status": "PASSED" if exec_result.passed else "FAILED"
+    }
+
+    if not exec_result.passed and exec_result.stack_trace:
+        updates["failure_history"] = [exec_result.stack_trace]
+
+    return updates
+
+
+def should_continue(state: AgentState) -> Literal["refactor_node", "__end__"]:
+    """
+    Conditional edge router that determines whether to terminate or self-heal.
+    """
+    exec_result = state.get("execution_result")
+
+    if exec_result and exec_result.passed:
+        logger.info("Sandbox tests passed successfully.")
+        return "__end__"
+
+    if state["iteration_count"] >= state["max_iterations"]:
+        logger.warning(
+            f"Reached max self-healing iterations ({state['max_iterations']}). Terminating."
+        )
+        return "__end__"
+
+    logger.info(
+        f"Tests failed on iteration {state['iteration_count']}. Routing to refactor_node for self-healing."
+    )
+    return "refactor_node"
