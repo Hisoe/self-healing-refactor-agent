@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "self-healing-refactor-agent"
+version = "0.1.0"
+description = "Production-grade agent for self-healing code refactoring & sandboxed testing."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=0.1.0",
+    "langchain-groq>=0.1.0",
+    "langchain-openai>=0.1.0",
+    "pydantic>=2.7.0",
+    "docker>=7.0.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "mypy>=1.9.0",
+    "black>=24.0.0",
+    "build>=1.0.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
