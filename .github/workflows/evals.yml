@@ -1,0 +1,49 @@
+name: CI & Agent Evaluation Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  agent-evaluation:
+    name: Run Unit Tests & Benchmark Evals
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run Framework Unit Tests
+        run: |
+          python -m pytest tests/ -v
+
+      - name: Execute Automated Evaluation Benchmark Harness
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LLM_PROVIDER: groq
+          GROQ_MODEL: llama-3.3-70b-versatile
+        run: |
+          python -m evals.eval_runner
+
+      - name: Upload Benchmark Results Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-latest-run
+          path: evals/results/latest_run.json

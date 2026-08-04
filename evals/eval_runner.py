@@ -1,16 +1,19 @@
 """
 evals/eval_runner.py
 --------------------
-Automated Evaluation Harness for the Self-Healing Refactor Agent.
+Automated Evaluation Harness & Regression Suite for the Self-Healing Refactor Agent.
 Measures Pass@1, Pass@N, average self-healing iterations, and execution convergence.
+Enforces strict CI/CD quality gates for automated Pull Request checks.
 """
 
 from dotenv import load_dotenv
+
 load_dotenv()  # MUST BE CALLED BEFORE GRAPH OR LLM IMPORTS
 
 import json
-import time
 import logging
+import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 from pydantic import BaseModel
@@ -19,8 +22,14 @@ from src.agent.graph import build_graph
 
 logger = logging.getLogger(__name__)
 
+# --- CI/CD QUALITY GATE THRESHOLDS ---
+MIN_PASS_AT_N_THRESHOLD = 90.0  # Require at least 90% Pass@N
+MAX_AVG_ITERATIONS = 2.0  # Fail if loop efficiency degrades beyond 2.0 iterations
+
 
 class BenchmarkMetric(BaseModel):
+    """Execution telemetry for an individual benchmark run."""
+
     benchmark_id: str
     benchmark_name: str
     passed: bool
@@ -31,6 +40,8 @@ class BenchmarkMetric(BaseModel):
 
 
 class EvalReport(BaseModel):
+    """Aggregate performance report for the entire benchmark suite."""
+
     total_benchmarks: int
     pass_at_1: float
     pass_at_n: float
@@ -43,17 +54,17 @@ def run_evaluation_suite(
     benchmarks_path: str = "data/benchmarks/test_cases.json",
     max_iterations: int = 3,
 ) -> EvalReport:
-    """Executes all benchmarks and generates statistical performance metrics."""
+    """Executes all benchmarks through the LangGraph engine and computes performance metrics."""
     bench_file = Path(benchmarks_path)
     if not bench_file.exists():
-        raise FileNotFoundError(f"Benchmark file not found: {bench_file}")
+        raise FileNotFoundError(f"Benchmark dataset not found at path: {bench_file}")
 
     with open(bench_file, "r", encoding="utf-8") as f:
         benchmarks = json.load(f)
 
     app = build_graph()
     results: List[BenchmarkMetric] = []
-    
+
     pass_1_count = 0
     pass_n_count = 0
     total_iterations = 0
@@ -63,7 +74,7 @@ def run_evaluation_suite(
 
     for idx, bench in enumerate(benchmarks, 1):
         print(f"[{idx}/{len(benchmarks)}] Testing: {bench['name']} ({bench['id']})")
-        
+
         initial_state = {
             "original_code": bench["legacy_code"],
             "refactored_code": None,
@@ -103,16 +114,24 @@ def run_evaluation_suite(
         results.append(metric)
 
         status_str = "PASSED" if passed else "FAILED"
-        print(f"    └─ Status: {status_str} | Iterations: {iterations} | Time: {metric.duration_seconds}s\n")
+        print(
+            f"    └─ Status: {status_str} | Iterations: {iterations} | Time: {metric.duration_seconds}s\n"
+        )
 
     total_time = round(time.time() - start_time, 2)
     total_count = len(benchmarks)
 
     report = EvalReport(
         total_benchmarks=total_count,
-        pass_at_1=round((pass_1_count / total_count) * 100, 2) if total_count > 0 else 0.0,
-        pass_at_n=round((pass_n_count / total_count) * 100, 2) if total_count > 0 else 0.0,
-        avg_iterations=round(total_iterations / total_count, 2) if total_count > 0 else 0.0,
+        pass_at_1=(
+            round((pass_1_count / total_count) * 100, 2) if total_count > 0 else 0.0
+        ),
+        pass_at_n=(
+            round((pass_n_count / total_count) * 100, 2) if total_count > 0 else 0.0
+        ),
+        avg_iterations=(
+            round(total_iterations / total_count, 2) if total_count > 0 else 0.0
+        ),
         total_duration_seconds=total_time,
         results=results,
     )
@@ -121,20 +140,24 @@ def run_evaluation_suite(
 
 
 def render_report_markdown(report: EvalReport) -> str:
-    """Formats evaluation metrics into a Markdown summary table."""
+    """Formats evaluation metrics into a clean Markdown summary table."""
     md = []
     md.append("### 📊 Automated Evaluation Suite Summary\n")
     md.append(f"- **Total Benchmarks Evaluated:** `{report.total_benchmarks}`")
     md.append(f"- **Pass@1 Rate (First Try Pass):** `{report.pass_at_1}%`")
     md.append(f"- **Pass@N Rate (Self-Healed Pass):** `{report.pass_at_n}%`")
     md.append(f"- **Avg. Iterations to Resolution:** `{report.avg_iterations}`")
-    md.append(f"- **Total Benchmark Execution Time:** `{report.total_duration_seconds}s`\n")
+    md.append(
+        f"- **Total Benchmark Execution Time:** `{report.total_duration_seconds}s`\n"
+    )
 
     md.append("| Benchmark ID | Benchmark Name | Status | Iterations | Duration |")
     md.append("|---|---|---|---|---|")
     for r in report.results:
         status_icon = "✅ PASSED" if r.passed else "❌ FAILED"
-        md.append(f"| `{r.benchmark_id}` | {r.benchmark_name} | {status_icon} | {r.iterations_used} | {r.duration_seconds}s |")
+        md.append(
+            f"| `{r.benchmark_id}` | {r.benchmark_name} | {status_icon} | {r.iterations_used} | {r.duration_seconds}s |"
+        )
 
     return "\n".join(md)
 
@@ -142,13 +165,29 @@ def render_report_markdown(report: EvalReport) -> str:
 if __name__ == "__main__":
     report = run_evaluation_suite()
     markdown_output = render_report_markdown(report)
-    
+
     output_dir = Path("evals/results")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     with open(output_dir / "latest_run.json", "w", encoding="utf-8") as f:
         f.write(report.model_dump_json(indent=2))
 
     print("\n" + "=" * 60)
     print(markdown_output)
     print("=" * 60)
+
+    # --- CI/CD QUALITY GATE ENFORCEMENT ---
+    if report.pass_at_n < MIN_PASS_AT_N_THRESHOLD:
+        print(
+            f"\n❌ CI GATE FAILED: Pass@N ({report.pass_at_n}%) fell below required threshold ({MIN_PASS_AT_N_THRESHOLD}%)."
+        )
+        sys.exit(1)
+
+    if report.avg_iterations > MAX_AVG_ITERATIONS:
+        print(
+            f"\n❌ CI GATE FAILED: Average iterations ({report.avg_iterations}) exceeded maximum allowable limit ({MAX_AVG_ITERATIONS})."
+        )
+        sys.exit(1)
+
+    print("\n✅ ALL CI EVALUATION GATES PASSED SUCCESSFULLY.")
+    sys.exit(0)
