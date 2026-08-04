@@ -4,7 +4,9 @@
 [![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-orange.svg)](https://github.com/langchain-ai/langgraph)
 [![Docker Sandbox](https://img.shields.io/badge/Security-Docker_Sandbox-blue.svg)](https://www.docker.com/)
 [![Evals Pass@N](https://img.shields.io/badge/Pass%40N-100%25-brightgreen.svg)](#-benchmark--evaluation-metrics)
+![CI Pipeline](https://github.com/your-username/your-repo-name/actions/workflows/evals.yml/badge.svg)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 
 An enterprise-grade autonomous agentic system built with **LangGraph**, **Pydantic v2**, and **Docker** that refactors legacy Python code into modern, typed Python 3.10+, automatically generates `pytest` test suites, and executes closed-loop self-healing inside an isolated execution container.
 
@@ -211,3 +213,13 @@ self-healing-refactor-agent/
 ├── pyproject.toml            # Package Specs & Dependencies
 ├── sample_input.py           # Sample Target Script
 └── README.md                 # System Architecture & Documentation
+```
+---
+
+## 🔄 Automated CI/CD Regression Pipeline
+
+This repository uses GitHub Actions to run automated agent evaluations on every Pull Request:
+
+1. **Regression Prevention:** Ensures prompt changes or graph updates don't degrade the **Pass@N** resolution rate below 90%.
+2. **Resource & Latency Tracking:** Blocks PRs if average iteration counts or execution times spike unexpectedly.
+3. **Sandbox Isolation:** Spins up isolated Docker execution sandboxes inside the CI runner for safe runtime code evaluation.
