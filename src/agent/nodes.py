@@ -24,51 +24,61 @@ _SANDBOX_ENGINE = DockerSandboxEngine()
 
 def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
     """
-    Production-grade parser with multi-tier fallback for raw code outputs,
-    markdown wrapping, and JSON repair.
+    Production-grade parser with strict multi-stage fallback:
+    1. Regex extraction of explicit JSON objects ({ ... })
+    2. Native json.loads() + Pydantic validation
+    3. json_repair fallback
+    4. Code extraction fallback if model emitted raw script
     """
     text = raw_text.strip()
 
-    # 1. Strip markdown fences if present
+    # 1. Strip markdown code fences if present (e.g. ```json or ```python)
     if "```" in text:
         text = re.sub(r"^```(?:json|python)?\s*", "", text, flags=re.MULTILINE)
         text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
 
-    # 2. Extract JSON object boundaries if the LLM output extra prose
+    # 2. Extract potential JSON object boundaries
     start_idx = text.find("{")
     end_idx = text.rfind("}")
-    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        json_candidate = text[start_idx : end_idx + 1]
-    else:
-        json_candidate = text
+    json_candidate = text[start_idx : end_idx + 1] if (start_idx != -1 and end_idx > start_idx) else text
 
-    # 3. Attempt JSON Repair
+    # 3. Stage A: Standard Native JSON Parsing
+    try:
+        parsed_dict = json.loads(json_candidate)
+        if isinstance(parsed_dict, dict):
+            return schema_cls(**parsed_dict)
+    except Exception:
+        pass
+
+    # 4. Stage B: Structural JSON Repair
     try:
         repaired_obj = repair_json(json_candidate, return_objects=True)
-        
         if isinstance(repaired_obj, dict):
+            # Ensure required schema fields exist before instantiation
+            if schema_cls == RefactoredCodeOutput and "explanation" not in repaired_obj:
+                repaired_obj["explanation"] = "Refactored to modern Python 3.10+ standards."
+            if schema_cls == RefactoredCodeOutput and "imports_used" not in repaired_obj:
+                repaired_obj["imports_used"] = []
             return schema_cls(**repaired_obj)
-        
-        if isinstance(repaired_obj, list) and len(repaired_obj) > 0:
-            for item in repaired_obj:
-                if isinstance(item, dict) and ("refactored_code" in item or "test_code" in item):
-                    return schema_cls(**item)
     except Exception as e:
-        logger.warning(f"JSON repair failed: {e}. Attempting fallback parser.")
+        logger.warning(f"JSON repair failed: {e}. Falling back to raw text extraction.")
 
-    # 4. Fallback for test_generator_node: If model returned raw python test code instead of JSON
+    # 5. Stage C: Fallback for Test Generator (Raw Pytest Code)
     if schema_cls == PytestSuiteOutput:
-        logger.warning("LLM emitted raw Python test code instead of JSON. Wrapping manually.")
+        logger.warning("LLM emitted raw Python test suite instead of JSON. Wrapping manually.")
         return PytestSuiteOutput(
             test_code=text,
             test_descriptions=["Extracted from raw model code output."]
         )
 
-    # 5. Fallback for refactor_node: If model returned raw refactored python code
+    # 6. Stage D: Fallback for Refactor Node (Raw Solution Code)
     if schema_cls == RefactoredCodeOutput:
-        logger.warning("LLM emitted raw Python code instead of JSON. Wrapping manually.")
+        logger.warning("LLM emitted raw Python solution instead of JSON. Wrapping manually.")
+        # Clean out any leftover JSON keys if raw string contains unparsed dict syntax
+        clean_code = re.sub(r'^\s*"refactored_code":\s*"', '', text)
+        clean_code = re.sub(r'"\s*,\s*"explanation".*$', '', clean_code, flags=re.DOTALL)
         return RefactoredCodeOutput(
-            refactored_code=text,
+            refactored_code=clean_code.strip(),
             explanation="Extracted from raw model code output.",
             imports_used=[]
         )
