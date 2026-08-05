@@ -3,11 +3,13 @@ src/sandbox/docker_sandbox.py
 ------------------------------
 Executes untrusted LLM-generated code and test suites inside an ephemeral
 Docker container with resource constraints, zero network access, and safe log extraction.
-Enforces open POSIX permissions on mounts to prevent Linux runner PermissionError (Errno 13).
+Fixes Linux host/container UID ownership conflicts by disabling pytest cache generation
+and handling temporary directory cleanup robustly.
 """
 
 import logging
 import os
+import shutil
 import tempfile
 import docker
 from docker.errors import DockerException
@@ -15,6 +17,21 @@ from src.sandbox.base import AbstractSandbox
 from src.agent.schemas import ExecutionResult
 
 logger = logging.getLogger(__name__)
+
+
+def _force_rmtree(path: str) -> None:
+    """Safely cleans up temporary directories even if created by container root user."""
+    if not os.path.exists(path):
+        return
+
+    def _remove_readonly(func, path_to_remove, exc_info):
+        os.chmod(path_to_remove, 0o777)
+        try:
+            func(path_to_remove)
+        except Exception:
+            pass
+
+    shutil.rmtree(path, onerror=_remove_readonly)
 
 
 class DockerSandboxEngine(AbstractSandbox):
@@ -27,10 +44,9 @@ class DockerSandboxEngine(AbstractSandbox):
     ):
         self.image_tag = image_tag
         self.timeout_seconds = timeout_seconds
-        
+
         try:
             self.client = docker.from_env()
-            # Active ping check to verify live daemon connection at startup
             self.client.ping()
         except (DockerException, Exception) as e:
             raise RuntimeError(
@@ -46,21 +62,20 @@ class DockerSandboxEngine(AbstractSandbox):
         """
         effective_timeout = timeout or self.timeout_seconds
 
-        with tempfile.TemporaryDirectory() as host_temp_dir:
-            # Grant full read/write/execute permissions to mounted host directory
-            os.chmod(host_temp_dir, 0o777)
+        # Use manual tempdir to control cleanup lifecycle explicitly without tempfile context manager exceptions
+        host_temp_dir = tempfile.mkdtemp(prefix="agent_sandbox_")
+        os.chmod(host_temp_dir, 0o777)
 
+        try:
             solution_path = os.path.join(host_temp_dir, "solution.py")
             test_path = os.path.join(host_temp_dir, "test_solution.py")
 
-            # Write solution and test modules
             with open(solution_path, "w", encoding="utf-8") as f:
                 f.write(refactored_code)
 
             with open(test_path, "w", encoding="utf-8") as f:
                 f.write("from solution import *\n\n" + test_code)
 
-            # Ensure mounted files have universal read/write permissions
             os.chmod(solution_path, 0o666)
             os.chmod(test_path, 0o666)
 
@@ -68,13 +83,13 @@ class DockerSandboxEngine(AbstractSandbox):
             try:
                 container = self.client.containers.run(
                     image=self.image_tag,
-                    # Targeted pytest call suppressing inherited outer config file discovery
-                    command="python -m pytest test_solution.py -o addopts=''",
+                    # Crucial: '-p no:cacheprovider' prevents pytest from creating root-owned .pytest_cache
+                    command="python -m pytest test_solution.py -v -p no:cacheprovider -o addopts=''",
                     volumes={host_temp_dir: {"bind": "/app", "mode": "rw"}},
                     working_dir="/app",
-                    network_mode="none",  # Strict network isolation
+                    network_mode="none",
                     mem_limit="256m",
-                    nano_cpus=1000000000,  # 1 CPU
+                    nano_cpus=1000000000,
                     detach=True,
                 )
 
@@ -118,3 +133,7 @@ class DockerSandboxEngine(AbstractSandbox):
                         container.remove(force=True)
                     except Exception:
                         pass
+
+        finally:
+            # Clean up mounted directory safely without crashing execution
+            _force_rmtree(host_temp_dir)
