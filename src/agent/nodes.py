@@ -2,7 +2,8 @@
 src/agent/nodes.py
 ------------------
 Contains atomic LangGraph node functions and routing logic for the
-self-healing code refactoring workflow with robust, multi-layer JSON parsing.
+self-healing code refactoring workflow with robust, multi-layer JSON parsing
+and API-level Pydantic structured output enforcement.
 """
 
 import logging
@@ -13,27 +14,28 @@ from json_repair import repair_json
 
 from langchain_core.prompts import ChatPromptTemplate
 from src.agent.factory import get_llm_engine
-from src.agent.schemas import AgentState, RefactoredCodeOutput, PytestSuiteOutput
+from src.agent.schemas import (
+    AgentState,
+    RefactoredCodeOutput, 
+    PytestSuiteOutput,
+)
 from src.agent.prompts import REFACTOR_SYSTEM_PROMPT, GENERATE_TESTS_SYSTEM_PROMPT
 from src.sandbox.docker_sandbox import DockerSandboxEngine
 
 logger = logging.getLogger(__name__)
 
-# Shared engine instance to avoid redundant socket handshakes per loop pass
-_SANDBOX_ENGINE = DockerSandboxEngine()
-
 
 def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
     """
     Production-grade parser with strict multi-stage fallback:
-    1. Regex extraction of explicit JSON objects ({ ... })
+    1. Markdown fence stripping
     2. Native json.loads() + Pydantic validation
     3. json_repair fallback
-    4. Code extraction fallback if model emitted raw script
+    4. Structural AST/Regex fallback if model emitted raw script
     """
     text = raw_text.strip()
 
-    # 1. Strip markdown code fences if present (e.g. ```json or ```python)
+    # 1. Strip markdown code fences
     if "```" in text:
         text = re.sub(r"^```(?:json|python)?\s*", "", text, flags=re.MULTILINE)
         text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
@@ -41,7 +43,11 @@ def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
     # 2. Extract potential JSON object boundaries
     start_idx = text.find("{")
     end_idx = text.rfind("}")
-    json_candidate = text[start_idx : end_idx + 1] if (start_idx != -1 and end_idx > start_idx) else text
+    json_candidate = (
+        text[start_idx : end_idx + 1]
+        if (start_idx != -1 and end_idx > start_idx)
+        else text
+    )
 
     # 3. Stage A: Standard Native JSON Parsing
     try:
@@ -55,11 +61,9 @@ def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
     try:
         repaired_obj = repair_json(json_candidate, return_objects=True)
         if isinstance(repaired_obj, dict):
-            # Ensure required schema fields exist before instantiation
-            if schema_cls == RefactoredCodeOutput and "explanation" not in repaired_obj:
-                repaired_obj["explanation"] = "Refactored to modern Python 3.10+ standards."
-            if schema_cls == RefactoredCodeOutput and "imports_used" not in repaired_obj:
-                repaired_obj["imports_used"] = []
+            if schema_cls == RefactoredCodeOutput:
+                repaired_obj.setdefault("explanation", "Refactored to modern Python 3.10+ standards.")
+                repaired_obj.setdefault("imports_used", [])
             return schema_cls(**repaired_obj)
     except Exception as e:
         logger.warning(f"JSON repair failed: {e}. Falling back to raw text extraction.")
@@ -72,23 +76,30 @@ def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
             test_descriptions=["Extracted from raw model code output."]
         )
 
-    # 6. Stage D: Fallback for Refactor Node (Raw Solution Code)
+    # Stage D: Fallback for Refactor Node (Extract code block or raw string)
     if schema_cls == RefactoredCodeOutput:
-        logger.warning("LLM emitted raw Python solution instead of JSON. Wrapping manually.")
-        # Clean out any leftover JSON keys if raw string contains unparsed dict syntax
-        clean_code = re.sub(r'^\s*"refactored_code":\s*"', '', text)
-        clean_code = re.sub(r'"\s*,\s*"explanation".*$', '', clean_code, flags=re.DOTALL)
+        logger.warning("LLM emitted conversational or raw output instead of JSON. Extracting solution.")
+        
+        # 1. Look for explicit markdown code fence first
+        code_match = re.search(r"```python\s*(.*?)\s*```", raw_text, re.DOTALL)
+        if code_match:
+            clean_code = code_match.group(1).strip()
+        else:
+            # 2. Strip leading conversational preambles
+            clean_code = re.sub(r"^(.*?)(def\s+|import\s+)", r"\2", raw_text, flags=re.DOTALL)
+            clean_code = re.sub(r"```$", "", clean_code, flags=re.MULTILINE).strip()
+
         return RefactoredCodeOutput(
-            refactored_code=clean_code.strip(),
-            explanation="Extracted from raw model code output.",
+            refactored_code=clean_code,
+            explanation="Extracted via fallback parser.",
             imports_used=[]
         )
-
-    raise ValueError(f"Could not parse valid schema from LLM response: {raw_text[:200]}...")
 
 
 def _truncate_stack_trace(trace: str, max_lines: int = 40) -> str:
     """Truncates massive stack traces to prevent context window inflation."""
+    if not trace:
+        return ""
     lines = trace.splitlines()
     if len(lines) <= max_lines:
         return trace
@@ -119,13 +130,20 @@ def refactor_node(state: AgentState) -> Dict[str, Any]:
         ("human", "Refactor or fix the following Python code:\n\n```python\n{code_to_refactor}\n```")
     ])
 
-    formatted_prompt = prompt.format_messages(
-        code_to_refactor=code_to_refactor,
-        failure_context=failure_context
-    )
+    inputs = {
+        "code_to_refactor": code_to_refactor,
+        "failure_context": failure_context
+    }
 
-    response = llm.invoke(formatted_prompt)
-    result: RefactoredCodeOutput = _safe_parse_model(response.content, RefactoredCodeOutput)
+    # Modern LCEL Invocation Pattern (Safe from raw string format collisions)
+    try:
+        structured_chain = prompt | llm.with_structured_output(RefactoredCodeOutput)
+        result: RefactoredCodeOutput = structured_chain.invoke(inputs)
+    except Exception as e:
+        logger.warning(f"Structured output call failed in refactor_node ({e}). Falling back to manual parser.")
+        raw_chain = prompt | llm
+        response = raw_chain.invoke(inputs)
+        result = _safe_parse_model(response.content, RefactoredCodeOutput)
 
     return {
         "refactored_code": result.refactored_code,
@@ -137,7 +155,7 @@ def refactor_node(state: AgentState) -> Dict[str, Any]:
 def generate_tests_node(state: AgentState) -> Dict[str, Any]:
     """
     Generates unit tests targeting the refactored solution.
-    Strictly enforces boolean literals and explicit imports.
+    Binds Pydantic structured output directly to LLM to guarantee valid JSON Schema adherence.
     """
     llm = get_llm_engine()
 
@@ -156,13 +174,19 @@ def generate_tests_node(state: AgentState) -> Dict[str, Any]:
         ("human", "Write pytest unit tests for this solution:\n\n```python\n{refactored_code}\n```")
     ])
 
-    formatted_prompt = prompt.format_messages(
-        refactored_code=state["refactored_code"],
-        failure_context=failure_context
-    )
+    inputs = {
+        "refactored_code": state["refactored_code"],
+        "failure_context": failure_context
+    }
 
-    response = llm.invoke(formatted_prompt)
-    result: PytestSuiteOutput = _safe_parse_model(response.content, PytestSuiteOutput)
+    try:
+        structured_chain = prompt | llm.with_structured_output(PytestSuiteOutput)
+        result: PytestSuiteOutput = structured_chain.invoke(inputs)
+    except Exception as e:
+        logger.warning(f"Structured output call failed in generate_tests_node ({e}). Falling back to manual parser.")
+        raw_chain = prompt | llm
+        response = raw_chain.invoke(inputs)
+        result = _safe_parse_model(response.content, PytestSuiteOutput)
 
     return {
         "test_code": result.test_code,
@@ -174,7 +198,9 @@ def run_tests_node(state: AgentState) -> Dict[str, Any]:
     """
     Executes the refactored code and test suite in the isolated Docker sandbox.
     """
-    exec_result = _SANDBOX_ENGINE.run_tests(
+    sandbox_engine = DockerSandboxEngine()
+    
+    exec_result = sandbox_engine.run_tests(
         refactored_code=state["refactored_code"],
         test_code=state["test_code"]
     )
@@ -188,7 +214,8 @@ def run_tests_node(state: AgentState) -> Dict[str, Any]:
     }
 
     if not exec_result.passed and exec_result.stack_trace:
-        updates["failure_history"] = [exec_result.stack_trace]
+        existing_history = state.get("failure_history") or []
+        updates["failure_history"] = existing_history + [exec_result.stack_trace]
 
     return updates
 
