@@ -1,46 +1,122 @@
 """
 src/agent/nodes.py
 ------------------
-Contains atomic LangGraph node functions and routing logic for the
-self-healing code refactoring workflow with robust, multi-layer JSON parsing
-and API-level Pydantic structured output enforcement.
+Contains atomic LangGraph node functions and routing logic with AST-guided 
+un-squashing guards and pre-JSON control character escaping.
 """
 
+import ast
+import json
 import logging
 import re
-import json
-from typing import Dict, Any, Literal
+from typing import Any, Dict, Literal
 from json_repair import repair_json
 
 from langchain_core.prompts import ChatPromptTemplate
 from src.agent.factory import get_llm_engine
 from src.agent.schemas import (
     AgentState,
-    RefactoredCodeOutput, 
     PytestSuiteOutput,
+    RefactoredCodeOutput,
 )
-from src.agent.prompts import REFACTOR_SYSTEM_PROMPT, GENERATE_TESTS_SYSTEM_PROMPT
+from src.agent.prompts import GENERATE_TESTS_SYSTEM_PROMPT, REFACTOR_SYSTEM_PROMPT
 from src.sandbox.docker_sandbox import DockerSandboxEngine
 
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_python_code(code: str) -> str:
+    """
+    AST-Guided Python Code Sanitizer.
+    If valid Python, returns code untouched. If flattened onto a single line by JSON repair,
+    restores linebreaks and indentation losslessly before AST parsing.
+    """
+    if not code or not code.strip():
+        return code
+
+    code = code.strip()
+
+    # 1. Fast Path: Valid Python AST as-is
+    try:
+        ast.parse(code)
+        return code
+    except SyntaxError:
+        pass
+
+    # 2. Repair Path A: Handle literal '\n' text representations
+    if "\\n" in code:
+        candidate = code.replace("\\n", "\n").replace("\\t", "    ")
+        try:
+            ast.parse(candidate)
+            return candidate
+        except SyntaxError:
+            pass
+
+    # 3. Repair Path B: Lossless Un-squashing for single-line code created by json_repair
+    if "\n" not in code and "def " in code:
+        # Converts 4+ consecutive spaces after non-whitespace characters into \n + spaces
+        candidate = re.sub(r"(\S)(\s{4,})", r"\1\n\2", code)
+        try:
+            ast.parse(candidate)
+            return candidate
+        except SyntaxError:
+            pass
+
+    return code
+
+
+def _ensure_typing_imports(code: str) -> str:
+    """Safely prepends missing `typing` module imports without breaking AST validity."""
+    if not code or not code.strip():
+        return code
+
+    needed_symbols = []
+    typing_symbols = ["Any", "Optional", "Union", "Dict", "List", "Tuple", "Callable"]
+
+    for symbol in typing_symbols:
+        if re.search(rf"\b{symbol}\b", code) and not re.search(rf"\bimport\s+.*\b{symbol}\b", code):
+            needed_symbols.append(symbol)
+
+    if needed_symbols and "from typing import" not in code:
+        import_stmt = f"from typing import {', '.join(needed_symbols)}\n"
+        return import_stmt + code
+
+    return code
+
+
+def _ensure_test_imports(test_code: str) -> str:
+    """Safely prepends missing test framework modules (pytest, os, sys, pathlib)."""
+    if not test_code or not test_code.strip():
+        return test_code
+
+    imports_to_add = []
+
+    if "pytest" in test_code and not re.search(r"\bimport\s+pytest\b", test_code):
+        imports_to_add.append("import pytest")
+    if re.search(r"\bos\.", test_code) and not re.search(r"\bimport\s+os\b", test_code):
+        imports_to_add.append("import os")
+    if re.search(r"\bsys\.", test_code) and not re.search(r"\bimport\s+sys\b", test_code):
+        imports_to_add.append("import sys")
+    if "Path(" in test_code and not re.search(r"\bfrom\s+pathlib\s+import\s+Path\b", test_code):
+        imports_to_add.append("from pathlib import Path")
+
+    if imports_to_add:
+        return "\n".join(imports_to_add) + "\n\n" + test_code
+
+    return test_code
+
+
 def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
     """
-    Production-grade parser with strict multi-stage fallback:
-    1. Markdown fence stripping
-    2. Native json.loads() + Pydantic validation
-    3. json_repair fallback
-    4. Structural AST/Regex fallback if model emitted raw script
+    Production-grade parser with pre-JSON control character escaping.
+    Prevents json_repair from squashing code onto a single line.
     """
     text = raw_text.strip()
 
-    # 1. Strip markdown code fences
     if "```" in text:
         text = re.sub(r"^```(?:json|python)?\s*", "", text, flags=re.MULTILINE)
         text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
 
-    # 2. Extract potential JSON object boundaries
     start_idx = text.find("{")
     end_idx = text.rfind("}")
     json_candidate = (
@@ -49,15 +125,24 @@ def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
         else text
     )
 
-    # 3. Stage A: Standard Native JSON Parsing
+    # Stage A1: Native JSON Parsing
     try:
-        parsed_dict = json.loads(json_candidate)
+        parsed_dict = json.loads(json_candidate, strict=False)
         if isinstance(parsed_dict, dict):
             return schema_cls(**parsed_dict)
     except Exception:
         pass
 
-    # 4. Stage B: Structural JSON Repair
+    # Stage A2: Pre-escape raw unescaped newlines inside JSON strings
+    try:
+        escaped_candidate = re.sub(r"(?<!\\)\n", r"\\n", json_candidate)
+        parsed_dict = json.loads(escaped_candidate, strict=False)
+        if isinstance(parsed_dict, dict):
+            return schema_cls(**parsed_dict)
+    except Exception:
+        pass
+
+    # Stage B: Repair Fallback
     try:
         repaired_obj = repair_json(json_candidate, return_objects=True)
         if isinstance(repaired_obj, dict):
@@ -68,61 +153,43 @@ def _safe_parse_model(raw_text: str, schema_cls: type) -> Any:
     except Exception as e:
         logger.warning(f"JSON repair failed: {e}. Falling back to raw text extraction.")
 
-    # 5. Stage C: Fallback for Test Generator (Raw Pytest Code)
+    # Stage C: Raw String Extraction Fallback
     if schema_cls == PytestSuiteOutput:
-        logger.warning("LLM emitted raw Python test suite instead of JSON. Wrapping manually.")
         return PytestSuiteOutput(
-            test_code=text,
+            test_code=_sanitize_python_code(text),
             test_descriptions=["Extracted from raw model code output."]
         )
 
-    # Stage D: Fallback for Refactor Node (Extract code block or raw string)
     if schema_cls == RefactoredCodeOutput:
-        logger.warning("LLM emitted conversational or raw output instead of JSON. Extracting solution.")
-        
-        # 1. Look for explicit markdown code fence first
         code_match = re.search(r"```python\s*(.*?)\s*```", raw_text, re.DOTALL)
         if code_match:
             clean_code = code_match.group(1).strip()
         else:
-            # 2. Strip leading conversational preambles
             clean_code = re.sub(r"^(.*?)(def\s+|import\s+)", r"\2", raw_text, flags=re.DOTALL)
             clean_code = re.sub(r"```$", "", clean_code, flags=re.MULTILINE).strip()
 
         return RefactoredCodeOutput(
-            refactored_code=clean_code,
+            refactored_code=_sanitize_python_code(clean_code),
             explanation="Extracted via fallback parser.",
             imports_used=[]
         )
 
 
-def _truncate_stack_trace(trace: str, max_lines: int = 40) -> str:
-    """Truncates massive stack traces to prevent context window inflation."""
-    if not trace:
-        return ""
-    lines = trace.splitlines()
-    if len(lines) <= max_lines:
-        return trace
-    return "\n".join(lines[-max_lines:])
-
-
 def refactor_node(state: AgentState) -> Dict[str, Any]:
-    """
-    Refactors original code into typed, modern Python 3.10+.
-    Injects previous sandbox execution errors and failing refactored code if retrying.
-    """
+    """Refactors original code into typed, modern Python 3.10+."""
     llm = get_llm_engine()
 
     failure_context = ""
     code_to_refactor = state.get("refactored_code") or state["original_code"]
 
     if state.get("failure_history"):
-        latest_error = _truncate_stack_trace(state["failure_history"][-1])
+        latest_error = state["failure_history"][-1][:1000]
         failure_context = (
-            f"\n\n### CRITICAL: PREVIOUS ATTEMPT FAILED IN SANDBOX EXECUTION ###\n"
-            f"Your previous solution failed unit tests with this output:\n"
+            f"\n\n============================================================\n"
+            f"⚠️ PREVIOUS ATTEMPT FAILED WITH THIS ERROR:\n"
             f"```text\n{latest_error}\n```\n"
-            f"Examine the failure trace and update the implementation to satisfy the test assertions.\n"
+            f"Address syntax errors, missing imports (e.g. from typing import Any), or bad logic.\n"
+            f"============================================================\n"
         )
 
     prompt = ChatPromptTemplate.from_messages([
@@ -135,7 +202,6 @@ def refactor_node(state: AgentState) -> Dict[str, Any]:
         "failure_context": failure_context
     }
 
-    # Modern LCEL Invocation Pattern (Safe from raw string format collisions)
     try:
         structured_chain = prompt | llm.with_structured_output(RefactoredCodeOutput)
         result: RefactoredCodeOutput = structured_chain.invoke(inputs)
@@ -145,28 +211,27 @@ def refactor_node(state: AgentState) -> Dict[str, Any]:
         response = raw_chain.invoke(inputs)
         result = _safe_parse_model(response.content, RefactoredCodeOutput)
 
+    final_code = _sanitize_python_code(result.refactored_code)
+    final_code = _ensure_typing_imports(final_code)
+
     return {
-        "refactored_code": result.refactored_code,
+        "refactored_code": final_code,
         "refactor_explanation": result.explanation,
         "status": "REFACTORED"
     }
 
 
 def generate_tests_node(state: AgentState) -> Dict[str, Any]:
-    """
-    Generates unit tests targeting the refactored solution.
-    Binds Pydantic structured output directly to LLM to guarantee valid JSON Schema adherence.
-    """
+    """Generates unit tests targeting the refactored solution."""
     llm = get_llm_engine()
 
     failure_context = ""
     if state.get("failure_history"):
-        latest_error = _truncate_stack_trace(state["failure_history"][-1])
+        latest_error = state["failure_history"][-1][:1000]
         failure_context = (
-            f"\n\n### CRITICAL: PREVIOUS TEST EXECUTION FAILED ###\n"
-            f"The previous test run failed with this output:\n"
+            f"\n\n### PREVIOUS TEST EXECUTION FAILED ###\n"
             f"```text\n{latest_error}\n```\n"
-            f"Fix any failing test assertions. Ensure dictionary boolean flags use real Python booleans (True/False) rather than string representations ('True'/'False').\n"
+            f"Double-check your mathematical calculations and ensure all test modules (os, pytest) are properly imported.\n"
         )
 
     prompt = ChatPromptTemplate.from_messages([
@@ -188,18 +253,19 @@ def generate_tests_node(state: AgentState) -> Dict[str, Any]:
         response = raw_chain.invoke(inputs)
         result = _safe_parse_model(response.content, PytestSuiteOutput)
 
+    final_test_code = _sanitize_python_code(result.test_code)
+    final_test_code = _ensure_test_imports(final_test_code)
+
     return {
-        "test_code": result.test_code,
+        "test_code": final_test_code,
         "status": "TESTS_GENERATED"
     }
 
 
 def run_tests_node(state: AgentState) -> Dict[str, Any]:
-    """
-    Executes the refactored code and test suite in the isolated Docker sandbox.
-    """
+    """Executes the refactored code and test suite in the isolated Docker sandbox."""
     sandbox_engine = DockerSandboxEngine()
-    
+
     exec_result = sandbox_engine.run_tests(
         refactored_code=state["refactored_code"],
         test_code=state["test_code"]
@@ -221,9 +287,7 @@ def run_tests_node(state: AgentState) -> Dict[str, Any]:
 
 
 def should_continue(state: AgentState) -> Literal["refactor_node", "__end__"]:
-    """
-    Conditional edge router that determines whether to terminate or self-heal.
-    """
+    """Conditional edge router that determines whether to terminate or self-heal."""
     exec_result = state.get("execution_result")
 
     if exec_result and exec_result.passed:

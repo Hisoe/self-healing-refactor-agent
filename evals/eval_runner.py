@@ -25,7 +25,7 @@ from src.agent.graph import build_graph
 logger = logging.getLogger(__name__)
 
 # --- CI/CD QUALITY GATE THRESHOLDS ---
-MIN_PASS_AT_N_THRESHOLD = 80.0  # Require at least 80% Pass@N
+MIN_PASS_AT_N_THRESHOLD = 90.0  # Require at least 90% Pass@N
 MAX_AVG_ITERATIONS = 2.2  # Fail if loop efficiency degrades beyond 2.2 iterations
 
 # --- CONCURRENCY CONTROL ---

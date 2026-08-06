@@ -1,12 +1,3 @@
-"""
-src/sandbox/docker_sandbox.py
-------------------------------
-Executes untrusted LLM-generated code and test suites inside an ephemeral
-Docker container with resource constraints, zero network access, and safe log extraction.
-Fixes Linux host/container UID ownership conflicts by disabling pytest cache generation
-and handling temporary directory cleanup robustly.
-"""
-
 import logging
 import os
 import shutil
@@ -35,7 +26,7 @@ def _force_rmtree(path: str) -> None:
 
 
 class DockerSandboxEngine(AbstractSandbox):
-    """Concrete Docker SDK sandbox implementation with cgroup resource limits and isolation."""
+    """Concrete Docker SDK sandbox implementation with resource limits and rich diagnostics."""
 
     def __init__(
         self,
@@ -56,13 +47,8 @@ class DockerSandboxEngine(AbstractSandbox):
     def run_tests(
         self, refactored_code: str, test_code: str, timeout: int = 30
     ) -> ExecutionResult:
-        """
-        Mounts solution and test code into an ephemeral directory and executes pytest.
-        Fulfills AbstractSandbox.run_tests interface contract explicitly.
-        """
         effective_timeout = timeout or self.timeout_seconds
 
-        # Use manual tempdir to control cleanup lifecycle explicitly without tempfile context manager exceptions
         host_temp_dir = tempfile.mkdtemp(prefix="agent_sandbox_")
         os.chmod(host_temp_dir, 0o777)
 
@@ -73,8 +59,9 @@ class DockerSandboxEngine(AbstractSandbox):
             with open(solution_path, "w", encoding="utf-8") as f:
                 f.write(refactored_code)
 
+            # Explicit import instead of wildcard to avoid scope pollution
             with open(test_path, "w", encoding="utf-8") as f:
-                f.write("from solution import *\n\n" + test_code)
+                f.write("import solution\nfrom solution import *\n\n" + test_code)
 
             os.chmod(solution_path, 0o666)
             os.chmod(test_path, 0o666)
@@ -83,8 +70,8 @@ class DockerSandboxEngine(AbstractSandbox):
             try:
                 container = self.client.containers.run(
                     image=self.image_tag,
-                    # Crucial: '-p no:cacheprovider' prevents pytest from creating root-owned .pytest_cache
-                    command="python -m pytest test_solution.py -v -p no:cacheprovider -o addopts=''",
+                    # Added --tb=short for rich failure feedback without cluttering token window
+                    command="python -m pytest test_solution.py -v --tb=short -p no:cacheprovider -o addopts=''",
                     volumes={host_temp_dir: {"bind": "/app", "mode": "rw"}},
                     working_dir="/app",
                     network_mode="none",
@@ -100,11 +87,14 @@ class DockerSandboxEngine(AbstractSandbox):
                 logs_str = logs_bytes.decode("utf-8", errors="replace")
 
                 passed = exit_code == 0
+                
+                # CRITICAL FIX: Keep stdout/stderr captured regardless of exit code
+                # Pytest outputs test failure details to STDOUT!
                 return ExecutionResult(
                     passed=passed,
                     exit_code=exit_code,
-                    stdout=logs_str if passed else "",
-                    stderr="" if passed else logs_str,
+                    stdout=logs_str,
+                    stderr=logs_str if not passed else "",
                     stack_trace=None if passed else logs_str,
                 )
 
@@ -124,7 +114,7 @@ class DockerSandboxEngine(AbstractSandbox):
                     exit_code=-1,
                     stdout="",
                     stderr=error_msg,
-                    stack_trace=f"Sandbox Execution Failure: {error_msg}",
+                    stack_trace=f"Sandbox Execution Failure:\n{error_msg}",
                 )
 
             finally:
@@ -135,5 +125,4 @@ class DockerSandboxEngine(AbstractSandbox):
                         pass
 
         finally:
-            # Clean up mounted directory safely without crashing execution
             _force_rmtree(host_temp_dir)

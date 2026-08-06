@@ -1,9 +1,9 @@
 {
   "total_benchmarks": 15,
-  "pass_at_1": 86.67,
-  "pass_at_n": 86.67,
-  "avg_iterations": 1.27,
-  "total_duration_seconds": 294.6,
+  "pass_at_1": 100.0,
+  "pass_at_n": 100.0,
+  "avg_iterations": 1.0,
+  "total_duration_seconds": 142.75,
   "provider_used": "mistral",
   "results": [
     {
@@ -11,7 +11,7 @@
       "benchmark_name": "Untyped Dictionary Filtering",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 19.18,
+      "duration_seconds": 11.37,
       "status": "PASSED",
       "error_message": null
     },
@@ -20,7 +20,7 @@
       "benchmark_name": "Inefficient Recursive Fibonacci",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 17.54,
+      "duration_seconds": 9.61,
       "status": "PASSED",
       "error_message": null
     },
@@ -29,25 +29,25 @@
       "benchmark_name": "Inefficient String Concatenation in Loop",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 14.01,
+      "duration_seconds": 8.92,
       "status": "PASSED",
       "error_message": null
     },
     {
       "benchmark_id": "bench_04_mutable_default_args",
       "benchmark_name": "Mutable Default Parameter Bug",
-      "passed": false,
-      "iterations_used": 3,
-      "duration_seconds": 43.05,
-      "status": "FAILED",
-      "error_message": "============================= test session starts ==============================\nplatform linux -- Python 3.10.20, pytest-9.1.1, pluggy-1.6.0 -- /usr/local/bin/python3.10\ncachedir: .pytest_cache\nrootdir: /app\ncollecting ... collected 0 items / 1 error\n\n==================================== ERRORS ====================================\n______________________ ERROR collecting test_solution.py _______________________\ntest_solution.py:1: in <module>\n    from solution import *\nsolution.py:1: in <module>\n    def append_to_list(element: Any, target_list: list[Any] | None = None) -> list[Any]:\nE   NameError: name 'Any' is not defined\n=========================== short test summary info ============================\nERROR test_solution.py - NameError: name 'Any' is not defined\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n=============================== 1 error in 0.70s ===============================\n"
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 8.94,
+      "status": "PASSED",
+      "error_message": null
     },
     {
       "benchmark_id": "bench_05_unhandled_dict_get",
       "benchmark_name": "Unsafe Key Access with Missing Fallbacks",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 14.83,
+      "duration_seconds": 10.15,
       "status": "PASSED",
       "error_message": null
     },
@@ -56,7 +56,7 @@
       "benchmark_name": "Unclosed File IO Handle",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 12.17,
+      "duration_seconds": 8.84,
       "status": "PASSED",
       "error_message": null
     },
@@ -65,25 +65,25 @@
       "benchmark_name": "Imperative Accumulation Loop",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 14.65,
+      "duration_seconds": 13.93,
       "status": "PASSED",
       "error_message": null
     },
     {
       "benchmark_id": "bench_08_duplicate_dict_keys",
       "benchmark_name": "Redundant Dict Transformation",
-      "passed": false,
-      "iterations_used": 3,
-      "duration_seconds": 63.91,
-      "status": "FAILED",
-      "error_message": "============================= test session starts ==============================\nplatform linux -- Python 3.10.20, pytest-9.1.1, pluggy-1.6.0 -- /usr/local/bin/python3.10\ncachedir: .pytest_cache\nrootdir: /app\ncollecting ... collected 0 items / 1 error\n\n==================================== ERRORS ====================================\n______________________ ERROR collecting test_solution.py _______________________\n/usr/local/lib/python3.10/site-packages/_pytest/python.py:508: in importtestmodule\n    mod = import_path(\n/usr/local/lib/python3.10/site-packages/_pytest/pathlib.py:596: in import_path\n    importlib.import_module(module_name)\n/usr/local/lib/python3.10/importlib/__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n<frozen importlib._bootstrap>:1050: in _gcd_import\n    ???\n<frozen importlib._bootstrap>:1027: in _find_and_load\n    ???\n<frozen importlib._bootstrap>:1006: in _find_and_load_unlocked\n    ???\n<frozen importlib._bootstrap>:688: in _load_unlocked\n    ???\n/usr/local/lib/python3.10/site-packages/_pytest/assertion/rewrite.py:188: in exec_module\n    exec(co, module.__dict__)\ntest_solution.py:1: in <module>\n    from solution import *\nE     File \"/app/solution.py\", line 2\nE       for r in records:\nE   IndentationError: unexpected indent\n=========================== short test summary info ============================\nERROR test_solution.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n=============================== 1 error in 0.62s ===============================\n"
+      "passed": true,
+      "iterations_used": 1,
+      "duration_seconds": 11.07,
+      "status": "PASSED",
+      "error_message": null
     },
     {
       "benchmark_id": "bench_09_manual_type_casting",
       "benchmark_name": "Unsafe String to Int Conversion",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 13.21,
+      "duration_seconds": 9.16,
       "status": "PASSED",
       "error_message": null
     },
@@ -92,7 +92,7 @@
       "benchmark_name": "Manual Deduplication and Filter",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 14.77,
+      "duration_seconds": 9.0,
       "status": "PASSED",
       "error_message": null
     },
@@ -101,7 +101,7 @@
       "benchmark_name": "Legacy Dictionary Key Verification",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 11.43,
+      "duration_seconds": 8.25,
       "status": "PASSED",
       "error_message": null
     },
@@ -110,7 +110,7 @@
       "benchmark_name": "Unsafe Deep Nested Indexing",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 12.85,
+      "duration_seconds": 10.07,
       "status": "PASSED",
       "error_message": null
     },
@@ -119,7 +119,7 @@
       "benchmark_name": "Global Counter Side Effect Pattern",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 18.05,
+      "duration_seconds": 8.15,
       "status": "PASSED",
       "error_message": null
     },
@@ -128,7 +128,7 @@
       "benchmark_name": "Bare Exception Catching",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 13.0,
+      "duration_seconds": 7.53,
       "status": "PASSED",
       "error_message": null
     },
@@ -137,7 +137,7 @@
       "benchmark_name": "Legacy Percent Formatting String Construction",
       "passed": true,
       "iterations_used": 1,
-      "duration_seconds": 11.91,
+      "duration_seconds": 7.71,
       "status": "PASSED",
       "error_message": null
     }
